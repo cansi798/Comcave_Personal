@@ -132,3 +132,5 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .fld input:focus{outline:none;border-color:var(--brand)}
 .gate .fb{margin:0 0 14px}
 [hidden]{display:none!important}
+.logout{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:0 12px;border-radius:12px;border:0;background:rgba(255,255,255,.14);color:inherit;font-size:14px;font-weight:650;cursor:pointer}
+@media (max-width:360px){.logout span{display:none}}

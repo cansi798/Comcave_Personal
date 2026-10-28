@@ -328,7 +328,16 @@ async function sha(t) {
 }
 function hasAccess() { try { return localStorage.getItem(KEY) === CODE_HASH; } catch (e) { return sessionOk; } }
 let sessionOk = false;
+const logoutBtn = document.getElementById('logout');
+function setLogout() { logoutBtn.hidden = !(hasAccess() || sessionOk); }
+logoutBtn.addEventListener('click', () => {
+  sessionOk = false; quiz = null;
+  try { localStorage.removeItem(KEY); } catch (e) {}
+  if (location.hash && location.hash !== '#/') history.replaceState(null, '', location.pathname + location.search);
+  viewGate(route); window.scrollTo(0, 0);
+});
 function viewGate(onOk) {
+  logoutBtn.hidden = true;
   header('Kurs', 'Personalwesen 2026');
   app.innerHTML = `
     <form class="panel gate" id="gate" autocomplete="off">
@@ -346,7 +355,7 @@ function viewGate(onOk) {
     if (await sha(inp.value) === CODE_HASH) {
       sessionOk = true;
       try { localStorage.setItem(KEY, CODE_HASH); } catch (err) {}
-      onOk();
+      setLogout(); onOk();
     } else { document.getElementById('gerr').hidden = false; inp.select(); }
   });
 }
@@ -354,6 +363,6 @@ function viewGate(onOk) {
 Promise.all([
   fetch('data/days.json').then(r => r.json()),
   fetch('data/videos.json').then(r => r.ok ? r.json() : {}).catch(() => ({}))
-]).then(([days, vids]) => { DAYS = days; VIDEOS = vids || {}; (hasAccess() || sessionOk) ? route() : viewGate(route); })
+]).then(([days, vids]) => { DAYS = days; VIDEOS = vids || {}; if (hasAccess() || sessionOk) { setLogout(); route(); } else viewGate(route); })
   .catch(() => { app.innerHTML = '<p class="lead">Die Kursdaten konnten nicht geladen werden. Bitte Seite neu laden.</p>'; });
 })();
