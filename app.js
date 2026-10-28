@@ -317,11 +317,43 @@ function route() {
   }
   viewHome();
 }
-window.addEventListener('hashchange', () => { route(); window.scrollTo(0, 0); app.focus({ preventScroll: true }); });
+window.addEventListener('hashchange', () => { if (!(hasAccess() || sessionOk)) return viewGate(route); route(); window.scrollTo(0, 0); app.focus({ preventScroll: true }); });
+
+/* ---------- Zugangscode ---------- */
+const CODE_HASH = '7444ca32f9d9c8abf59398f3943c949bea29b4892645a67650280f0771a6c351';
+const KEY = 'pw-zugang';
+async function sha(t) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t.trim().toLowerCase()));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+function hasAccess() { try { return localStorage.getItem(KEY) === CODE_HASH; } catch (e) { return sessionOk; } }
+let sessionOk = false;
+function viewGate(onOk) {
+  header('Kurs', 'Personalwesen 2026');
+  app.innerHTML = `
+    <form class="panel gate" id="gate" autocomplete="off">
+      <div class="gate-ic">${ICON.key}</div>
+      <h1>Zugang zum Kurs</h1>
+      <p class="lead">Bitte gib den Zugangscode ein, den du im Unterricht bekommen hast.</p>
+      <label class="fld"><span>Zugangscode</span>
+        <input id="code" type="password" inputmode="text" autocapitalize="off" autocorrect="off" spellcheck="false" required></label>
+      <div class="fb bad" id="gerr" hidden><b>Code stimmt nicht</b><span>Bitte prüfe die Schreibweise und versuche es nochmal.</span></div>
+      <button class="btn full" type="submit">Weiter</button>
+    </form>`;
+  const inp = document.getElementById('code'); inp.focus();
+  document.getElementById('gate').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (await sha(inp.value) === CODE_HASH) {
+      sessionOk = true;
+      try { localStorage.setItem(KEY, CODE_HASH); } catch (err) {}
+      onOk();
+    } else { document.getElementById('gerr').hidden = false; inp.select(); }
+  });
+}
 
 Promise.all([
   fetch('data/days.json').then(r => r.json()),
   fetch('data/videos.json').then(r => r.ok ? r.json() : {}).catch(() => ({}))
-]).then(([days, vids]) => { DAYS = days; VIDEOS = vids || {}; route(); })
+]).then(([days, vids]) => { DAYS = days; VIDEOS = vids || {}; (hasAccess() || sessionOk) ? route() : viewGate(route); })
   .catch(() => { app.innerHTML = '<p class="lead">Die Kursdaten konnten nicht geladen werden. Bitte Seite neu laden.</p>'; });
 })();

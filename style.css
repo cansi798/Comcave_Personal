@@ -125,3 +125,10 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .dotwrap summary{cursor:pointer;font-size:14px;color:var(--muted);padding:4px 0;list-style:revert}
 .dotwrap .dots{margin-top:8px}
 .fb u{text-decoration:none;font-weight:700;display:block;margin-top:4px}
+.gate{margin-top:24px;text-align:left}
+.gate-ic{width:52px;height:52px;border-radius:14px;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;margin-bottom:8px}
+.fld{display:flex;flex-direction:column;gap:6px;margin:16px 0;font-weight:650}
+.fld input{font:inherit;font-size:17px;min-height:50px;padding:0 14px;border-radius:12px;border:2px solid var(--line);background:var(--bg);color:var(--ink)}
+.fld input:focus{outline:none;border-color:var(--brand)}
+.gate .fb{margin:0 0 14px}
+[hidden]{display:none!important}
