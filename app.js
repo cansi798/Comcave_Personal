@@ -4,7 +4,7 @@ const app = document.getElementById('app');
 const back = document.getElementById('back');
 const eyebrow = document.getElementById('eyebrow');
 const toptitle = document.getElementById('toptitle');
-let DAYS = [], VIDEOS = {};
+let DAYS = [], VIDEOS = {}, POOL = [];
 let quiz = null; // laufender Quiz-Zustand
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -39,6 +39,8 @@ function viewHome() {
   app.innerHTML = `
     <h1>Unterricht nach Tagen</h1>
     <p class="lead">Wähle einen Tag. Dort findest du Präsentation, Skript, Video, das Tagesquiz und die freiwilligen Aufgaben für den Nachmittag.</p>
+    ${POOL.length ? `<div class="tiles" style="margin:14px 0 18px"><a class="tile wide pool" href="#/pruefung">
+      <span class="ic">${ICON.task}</span><span class="tx"><b>Prüfungspool üben</b><small>${POOL.length} Fragen aus Tag 1 bis ${Math.max(...POOL.map(q => q.tag))} · Simulation der Lernerfolgskontrolle mit 30 Zufallsfragen</small></span>${ICON.chev}</a></div>` : ''}
     <ul class="days">${DAYS.map(d => `
       <li><a class="day${d.date === today ? ' today' : ''}" href="#/tag/${d.nr}">
         <span class="num">${d.nr}</span>
@@ -170,7 +172,7 @@ function qCard(k) {
   const fb = locked ? `<div class="fb ${right ? 'ok' : 'bad'}"><b>${right ? 'Richtig' : (sel.size ? 'Leider nicht ganz' : 'Nicht beantwortet')}</b><span><u>Lösungshinweis</u> ${md(q.expl)}</span></div>` : '';
   const act = (!locked && quiz.fb === 'now') ? `<div class="q-actions"><button type="button" class="btn full" data-check="${k}"${sel.size ? '' : ' disabled'}>Prüfen</button></div>` : '';
   return el(`<section class="q${locked ? ' locked' : ''}" id="q${k}">
-    <div class="q-head"><span>Frage ${k + 1} von ${quiz.order.length}</span></div>
+    <div class="q-head"><span>Frage ${k + 1} von ${quiz.order.length}</span>${q.tag ? `<span>Tag ${q.tag}</span>` : ''}</div>
     <p class="q-text">${md(q.q)}</p>
     <div class="q-hint">${multi ? `Mehrere Antworten richtig (${nCorrect(q)})` : 'Eine Antwort richtig'}</div>
     <div class="opts">${opts}</div>${fb}${act}</section>`);
@@ -180,8 +182,8 @@ function scoreOf() { return quiz.order.reduce((s, qi, k) => s + (isRight(quiz.se
 
 function renderQuiz() {
   const { d, set } = quiz;
-  const backTo = set.id === 'tag' ? `#/tag/${d.nr}` : `#/tag/${d.nr}/nachmittag`;
-  header(`Tag ${d.nr} · ${set.name}`, d.short, backTo);
+  const backTo = set.back || (set.id === 'tag' ? `#/tag/${d.nr}` : `#/tag/${d.nr}/nachmittag`);
+  header(set.eb || `Tag ${d.nr} · ${set.name}`, d.short, backTo);
   if (quiz.done) return renderResult();
   const n = quiz.order.length;
   if (quiz.mode === 'list') {
@@ -234,9 +236,16 @@ function renderResult() {
   app.innerHTML = '';
   app.appendChild(el(`<div class="panel score"><div class="big">${s} / ${n}</div><p>${pct} Prozent richtig. ${msg}</p>
     <div class="subrow" style="margin-top:14px">
-      <button class="btn" style="flex:1" data-again>Nochmal</button>
+      ${quiz.set.id === 'sim' ? '<button class="btn" style="flex:1" data-newsim>Neue Simulation</button>' : '<button class="btn" style="flex:1" data-again>Nochmal</button>'}
       ${wrong.length ? `<button class="btn ghost" style="flex:1" data-wrong>Nur falsche (${wrong.length})</button>` : ''}
     </div></div>`));
+  if (quiz.set.pool) {
+    const by = {};
+    quiz.order.forEach((qi, k) => { const t = quiz.set.questions[qi].tag; by[t] = by[t] || [0, 0]; by[t][1]++; if (isRight(quiz.set.questions[qi], quiz.sel[k])) by[t][0]++; });
+    app.appendChild(el(`<details class="panel" style="margin-bottom:12px"${quiz.set.id === 'sim' ? ' open' : ''}><summary><b>Ergebnis nach Tagen</b></summary><ul class="bytag">${Object.keys(by).sort((a, b) => a - b).map(t => {
+      const [r, n] = by[t], dd = DAYS.find(x => x.nr === +t);
+      return `<li class="${r === n ? 'ok' : r / n < .5 ? 'bad' : ''}"><span>Tag ${t}${dd ? ' · ' + esc(dd.short) : ''}</span><b>${r} / ${n}</b></li>`; }).join('')}</ul></details>`));
+  }
   app.appendChild(el(`<div class="filter"><button data-f="all" class="${quiz.filter==='all'?'on':''}">Alle Fragen</button><button data-f="wrong" class="${quiz.filter==='wrong'?'on':''}">Nur falsche</button></div>`));
   const ks = quiz.filter === 'wrong' ? wrong : quiz.order.map((_, k) => k);
   ks.forEach(k => app.appendChild(qCard(k)));
@@ -281,6 +290,7 @@ app.addEventListener('click', e => {
   }
   const f = e.target.closest('[data-f]');
   if (f) { quiz.filter = f.dataset.f; renderResult(); return; }
+  if (e.target.closest('[data-newsim]')) { startSim(); window.scrollTo(0,0); return; }
   if (e.target.closest('[data-again]')) { startQuiz(quiz.d, quiz.set, quiz, quiz.set.questions.map((_, i) => i)); window.scrollTo(0,0); return; }
   if (e.target.closest('[data-wrong]')) {
     const wrongQ = quiz.order.filter((qi, k) => !isRight(quiz.set.questions[qi], quiz.sel[k]));
@@ -303,8 +313,85 @@ function confirmInline(open) {
 }
 
 /* ---------- Router ---------- */
+/* ---------- Prüfungspool ---------- */
+// Pool-Runden laufen unter #/pruefung: Zurück auf dieselbe Adresse muss neu rendern
+back.addEventListener('click', e => { if (back.getAttribute('href') === location.hash) { e.preventDefault(); route(); window.scrollTo(0, 0); } });
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const mixOpts = q => ({ ...q, options: shuffle(q.options) });
+const POOL_D = { nr: 0, short: 'Prüfungspool', title: 'Prüfungspool Personalwesen' };
+const SIM_N = 30;
+
+function viewPool() {
+  quiz = null;
+  header('Prüfungspool', 'Üben und Simulation', '#/');
+  const tags = [...new Set(POOL.map(q => q.tag))].sort((a, b) => a - b);
+  let pref = {}; try { pref = JSON.parse(localStorage.getItem('pw-pool-pref') || '{}'); } catch (e) {}
+  const selTags = new Set(pref.tags && pref.tags.length ? pref.tags : tags);
+  const mode = pref.mode || 'slide', fb = pref.fb || 'now', ord = pref.ord || 'mix';
+  app.innerHTML = `
+    <h1>Prüfungspool</h1>
+    <p class="lead">${POOL.length} Prüfungsfragen aus Tag ${tags[0]} bis ${tags[tags.length - 1]}. Jede Frage ist für sich lösbar: Gesetzestexte und alle Zahlen stehen direkt in der Frage.</p>
+    <div class="panel sim">
+      <h2 style="margin-top:0">Simulation Lernerfolgskontrolle</h2>
+      <p style="margin:0 0 12px">${SIM_N} zufällige Fragen aus allen Tagen, wie in der echten Kontrolle. Die Auswertung kommt erst am Ende, mit Ergebnis nach Tagen.</p>
+      <button class="btn full" id="simstart">Simulation starten</button>
+    </div>
+    <h2>Üben</h2>
+    <form class="panel" id="poolsetup">
+      <fieldset class="opt-group"><legend>Tage</legend>
+        <div class="daypick">${tags.map(t => `<label><input type="checkbox" name="tag" value="${t}"${selTags.has(t) ? ' checked' : ''}>Tag ${t} <small>${POOL.filter(q => q.tag === t).length}</small></label>`).join('')}</div>
+        <div class="subrow" style="margin-top:8px"><button type="button" class="chip" data-all="1">Alle</button><button type="button" class="chip" data-all="0">Keine</button></div>
+      </fieldset>
+      <fieldset class="opt-group"><legend>Reihenfolge</legend>
+        <div class="seg">
+          <label><input type="radio" name="ord" value="mix"${ord==='mix'?' checked':''}><b>Gemischt</b><small>Fragen und Antworten zufällig</small></label>
+          <label><input type="radio" name="ord" value="tag"${ord==='tag'?' checked':''}><b>Nach Tagen</b><small>Von Tag 1 aufwärts</small></label>
+        </div></fieldset>
+      <fieldset class="opt-group"><legend>Ansicht</legend>
+        <div class="seg">
+          <label><input type="radio" name="mode" value="slide"${mode==='slide'?' checked':''}><b>Einzeln</b><small>Eine Frage pro Seite</small></label>
+          <label><input type="radio" name="mode" value="list"${mode==='list'?' checked':''}><b>Untereinander</b><small>Alle Fragen auf einer Seite</small></label>
+        </div></fieldset>
+      <fieldset class="opt-group"><legend>Feedback</legend>
+        <div class="seg">
+          <label><input type="radio" name="fb" value="now"${fb==='now'?' checked':''}><b>Sofort</b><small>Nach jeder Frage prüfen</small></label>
+          <label><input type="radio" name="fb" value="end"${fb==='end'?' checked':''}><b>Am Ende</b><small>Erst alles beantworten</small></label>
+        </div></fieldset>
+      <button class="btn full" type="submit" id="poolgo">Üben starten</button>
+      <p class="note">Bei manchen Fragen sind mehrere Antworten richtig. Das steht dann direkt bei der Frage.</p>
+    </form>`;
+  const form = document.getElementById('poolsetup'), go = document.getElementById('poolgo');
+  const picked = () => [...form.querySelectorAll('input[name=tag]:checked')].map(i => +i.value);
+  const upd = () => { const n = POOL.filter(q => picked().includes(q.tag)).length; go.textContent = n ? `Üben starten (${n} Fragen)` : 'Bitte mindestens einen Tag wählen'; go.disabled = !n; };
+  form.addEventListener('change', upd);
+  form.querySelectorAll('[data-all]').forEach(b => b.addEventListener('click', () => { form.querySelectorAll('input[name=tag]').forEach(i => { i.checked = b.dataset.all === '1'; }); upd(); }));
+  upd();
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const f = new FormData(form), t = picked();
+    const p = { mode: f.get('mode'), fb: f.get('fb'), ord: f.get('ord'), tags: t };
+    try { localStorage.setItem('pw-pool-pref', JSON.stringify(p)); } catch (err) {}
+    let qs = POOL.filter(q => t.includes(q.tag));
+    if (p.ord === 'mix') qs = shuffle(qs).map(mixOpts);
+    startQuiz(POOL_D, { id: 'pool', pool: true, name: 'Üben', eb: 'Üben', back: '#/pruefung', questions: qs }, p, qs.map((_, i) => i));
+    window.scrollTo(0, 0);
+  });
+  document.getElementById('simstart').addEventListener('click', () => { startSim(); window.scrollTo(0, 0); });
+}
+
+function startSim() {
+  // aus jedem Tag anteilig ziehen, Rest zufällig auffüllen
+  const tags = [...new Set(POOL.map(q => q.tag))];
+  const pick = [];
+  tags.forEach(t => { const g = POOL.filter(q => q.tag === t); pick.push(...shuffle(g).slice(0, Math.floor(g.length * SIM_N / POOL.length))); });
+  pick.push(...shuffle(POOL.filter(q => !pick.includes(q))).slice(0, SIM_N - pick.length));
+  const qs = shuffle(pick).map(mixOpts);
+  startQuiz(POOL_D, { id: 'sim', pool: true, name: 'Simulation', eb: 'Simulation · 30 Fragen', back: '#/pruefung', questions: qs }, { mode: 'slide', fb: 'end' }, qs.map((_, i) => i));
+}
+
 function route() {
   const h = location.hash.replace(/^#\/?/, '').split('/');
+  if (h[0] === 'pruefung' && POOL.length) return viewPool();
   if (h[0] === 'tag') {
     const d = DAYS.find(x => x.nr === +h[1]);
     if (!d) return viewHome();
@@ -362,7 +449,8 @@ function viewGate(onOk) {
 
 Promise.all([
   fetch('data/days.json').then(r => r.json()),
-  fetch('data/videos.json').then(r => r.ok ? r.json() : {}).catch(() => ({}))
-]).then(([days, vids]) => { DAYS = days; VIDEOS = vids || {}; if (hasAccess() || sessionOk) { setLogout(); route(); } else viewGate(route); })
+  fetch('data/videos.json').then(r => r.ok ? r.json() : {}).catch(() => ({})),
+  fetch('data/pruefung.json').then(r => r.ok ? r.json() : []).catch(() => [])
+]).then(([days, vids, pool]) => { DAYS = days; VIDEOS = vids || {}; POOL = Array.isArray(pool) ? pool : []; if (hasAccess() || sessionOk) { setLogout(); route(); } else viewGate(route); })
   .catch(() => { app.innerHTML = '<p class="lead">Die Kursdaten konnten nicht geladen werden. Bitte Seite neu laden.</p>'; });
 })();
